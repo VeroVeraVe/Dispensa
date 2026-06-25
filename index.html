@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="Dispensa"/>
+<title>🥫 La Mia Dispensa</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #FAF7F2; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; color: #2C2417; }
+input, select, button { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const SK = { inv:"dispensa_inventory", base:"dispensa_baseMenu", weekly:"dispensa_weeklyMenus" };
+const load = (k, fb) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):fb; } catch { return fb; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+const DAYS = ["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
+const MEALS = ["Pranzo","Cena"];
+const CATEGORIES = ["Pasta & Riso","Carne","Pesce","Verdura","Frutta","Latticini","Scatolame","Pane & Cereali","Bevande","Detersivi","Altro"];
+const CAT_ICONS = {"Pasta & Riso":"🍝","Carne":"🥩","Pesce":"🐟","Verdura":"🥦","Frutta":"🍎","Latticini":"🧀","Scatolame":"🥫","Pane & Cereali":"🍞","Bevande":"🥤","Detersivi":"🧴","Altro":"📦"};
+const UNITS = ["pz","kg","g","L","ml","conf","busta","barattolo","bottiglia"];
+
+const emptyBase = () => { const m={}; DAYS.forEach(d=>{m[d]={Pranzo:"",Cena:""}}); return m; };
+
+const getWeekKey = (date) => {
+  const d=new Date(date); d.setHours(0,0,0,0);
+  d.setDate(d.getDate()-d.getDay()+1);
+  return d.toISOString().slice(0,10);
+};
+
+const fmtDate = (iso) => { if(!iso) return "—"; const [y,m,d]=iso.split("-"); return d+"/"+m+"/"+y; };
+
+const expiryStatus = (iso) => {
+  if(!iso) return "ok";
+  const today=new Date(); today.setHours(0,0,0,0);
+  const diff=Math.ceil((new Date(iso)-today)/86400000);
+  if(diff<0) return "expired"; if(diff<=7) return "soon"; return "ok";
+};
+
+const ST = {
+  ok:      {bg:"#e8f5e9",color:"#2e7d32",label:"OK"},
+  soon:    {bg:"#fff8e1",color:"#f57f17",label:"In scadenza"},
+  expired: {bg:"#ffebee",color:"#c62828",label:"Scaduto"}
+};
+
+const inp = {padding:"8px 10px",borderRadius:8,border:"1.5px solid #d4c9b8",background:"#fff",fontSize:14,width:"100%"};
+const lbl = {display:"block",fontSize:12,fontWeight:600,color:"#6B4E3D",marginBottom:4};
+const sBtn = {border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontWeight:600,fontSize:14,background:"#f0ebe3",color:"#2C2417"};
+const btn = (bg,sm) => ({background:bg,color:"#fff",border:"none",borderRadius:8,padding:sm?"6px 12px":"8px 16px",fontWeight:600,fontSize:sm?13:14,cursor:"pointer",whiteSpace:"nowrap"});
+
+function App() {
+  const [tab,setTab]=useState("dispensa");
+  const [inventory,setInventory]=useState(()=>load(SK.inv,[]));
+  const [baseMenu,setBaseMenu]=useState(()=>load(SK.base,emptyBase()));
+  const [weeklyMenus,setWeeklyMenus]=useState(()=>load(SK.weekly,{}));
+
+  useEffect(()=>save(SK.inv,inventory),[inventory]);
+  useEffect(()=>save(SK.base,baseMenu),[baseMenu]);
+  useEffect(()=>save(SK.weekly,weeklyMenus),[weeklyMenus]);
+
+  const tabs=[
+    {id:"dispensa",label:"🏪 Dispensa"},
+    {id:"basemenu",label:"📋 Menù Base"},
+    {id:"weekly",label:"📅 Settimana"},
+    {id:"shopping",label:"🛒 Spesa"},
+  ];
+
+  return (
+    React.createElement("div",{style:{minHeight:"100vh",background:"#FAF7F2"}},
+      React.createElement("div",{style:{background:"#5C7A5A",color:"#FAF7F2",padding:"16px 16px 0",boxShadow:"0 2px 12px #0002",position:"sticky",top:0,zIndex:100}},
+        React.createElement("div",{style:{maxWidth:960,margin:"0 auto"}},
+          React.createElement("h1",{style:{margin:"0 0 2px",fontSize:20,fontWeight:700}},"🥫 La Mia Dispensa"),
+          React.createElement("p",{style:{margin:"0 0 12px",fontSize:12,opacity:.8}},"Inventario · Menù · Spesa"),
+          React.createElement("div",{style:{display:"flex",gap:3,overflowX:"auto"}},
+            tabs.map(t=>React.createElement("button",{key:t.id,onClick:()=>setTab(t.id),style:{
+              background:tab===t.id?"#FAF7F2":"transparent",
+              color:tab===t.id?"#5C7A5A":"#FAF7F2",
+              border:"none",borderRadius:"8px 8px 0 0",padding:"8px 12px",
+              fontWeight:600,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0
+            }},t.label))
+          )
+        )
+      ),
+      React.createElement("div",{style:{maxWidth:960,margin:"0 auto",padding:"20px 12px 40px"}},
+        tab==="dispensa"&&React.createElement(DispensaTab,{inventory,setInventory}),
+        tab==="basemenu"&&React.createElement(BaseMenuTab,{baseMenu,setBaseMenu}),
+        tab==="weekly"&&React.createElement(WeeklyTab,{baseMenu,weeklyMenus,setWeeklyMenus,inventory,setInventory}),
+        tab==="shopping"&&React.createElement(ShoppingTab,{inventory,weeklyMenus,baseMenu})
+      )
+    )
+  );
+}
+
+function DispensaTab({inventory,setInventory}) {
+  const [showForm,setShowForm]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [filterCat,setFilterCat]=useState("Tutte");
+  const [filterStatus,setFilterStatus]=useState("Tutti");
+  const [search,setSearch]=useState("");
+  const ef={name:"",category:"Pasta & Riso",quantity:1,unit:"pz",expiry:"",notes:""};
+  const [form,setForm]=useState(ef);
+  const sf=f=>setForm(p=>({...p,...f}));
+
+  const resetForm=()=>{setForm(ef);setEditId(null);};
+  const handleSave=()=>{
+    if(!form.name.trim()) return;
+    if(editId!==null){setInventory(inv=>inv.map(i=>i.id===editId?{...i,...form}:i));}
+    else{setInventory(inv=>[...inv,{...form,id:Date.now()}]);}
+    setShowForm(false);resetForm();
+  };
+  const handleEdit=(item)=>{
+    setForm({name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||"",notes:item.notes||""});
+    setEditId(item.id);setShowForm(true);
+  };
+  const handleDelete=(id)=>{if(window.confirm("Eliminare questo prodotto?"))setInventory(inv=>inv.filter(i=>i.id!==id));};
+  const adjustQty=(id,delta)=>setInventory(inv=>inv.map(i=>i.id===id?{...i,quantity:Math.max(0,i.quantity+delta)}:i));
+
+  const filtered=inventory.filter(i=>{
+    return(filterCat==="Tutte"||i.category===filterCat)&&
+           (filterStatus==="Tutti"||expiryStatus(i.expiry)===filterStatus)&&
+           i.name.toLowerCase().includes(search.toLowerCase());
+  });
+  const grouped={};
+  filtered.forEach(i=>{if(!grouped[i.category])grouped[i.category]=[];grouped[i.category].push(i);});
+  const expiredCount=inventory.filter(i=>expiryStatus(i.expiry)==="expired").length;
+  const soonCount=inventory.filter(i=>expiryStatus(i.expiry)==="soon").length;
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}},
+      [{label:"Totali",value:inventory.length,bg:"#e8f5e9",color:"#2e7d32"},
+       {label:"In scadenza",value:soonCount,bg:"#fff8e1",color:"#f57f17"},
+       {label:"Scaduti",value:expiredCount,bg:"#ffebee",color:"#c62828"}
+      ].map(s=>React.createElement("div",{key:s.label,style:{flex:"1 1 100px",background:s.bg,borderRadius:12,padding:"10px 14px",minWidth:90}},
+        React.createElement("div",{style:{fontSize:22,fontWeight:700,color:s.color}},s.value),
+        React.createElement("div",{style:{fontSize:11,color:s.color,opacity:.8}},s.label)
+      ))
+    ),
+    React.createElement("div",{style:{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}},
+      React.createElement("input",{placeholder:"🔍 Cerca...",value:search,onChange:e=>setSearch(e.target.value),style:{...inp,flex:1,minWidth:130}}),
+      React.createElement("select",{value:filterCat,onChange:e=>setFilterCat(e.target.value),style:{...inp,width:"auto"}},
+        React.createElement("option",null,"Tutte"),
+        CATEGORIES.map(c=>React.createElement("option",{key:c},c))
+      ),
+      React.createElement("select",{value:filterStatus,onChange:e=>setFilterStatus(e.target.value),style:{...inp,width:"auto"}},
+        React.createElement("option",{value:"Tutti"},"Tutti"),
+        React.createElement("option",{value:"ok"},"OK"),
+        React.createElement("option",{value:"soon"},"In scadenza"),
+        React.createElement("option",{value:"expired"},"Scaduti")
+      ),
+      React.createElement("button",{onClick:()=>{resetForm();setShowForm(true);},style:btn("#5C7A5A")},"+ Aggiungi")
+    ),
+    showForm&&React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,marginBottom:16,border:"1.5px solid #d4c9b8",boxShadow:"0 2px 12px #0001"}},
+      React.createElement("h3",{style:{margin:"0 0 14px",color:"#5C7A5A",fontSize:16}},editId?"Modifica prodotto":"Nuovo prodotto"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}},
+        React.createElement("div",null,React.createElement("label",{style:lbl},"Nome *"),React.createElement("input",{value:form.name,onChange:e=>sf({name:e.target.value}),style:inp,placeholder:"es. Spaghetti"})),
+        React.createElement("div",null,React.createElement("label",{style:lbl},"Categoria"),React.createElement("select",{value:form.category,onChange:e=>sf({category:e.target.value}),style:inp},CATEGORIES.map(c=>React.createElement("option",{key:c},c)))),
+        React.createElement("div",null,React.createElement("label",{style:lbl},"Quantità"),React.createElement("input",{type:"number",min:"0",value:form.quantity,onChange:e=>sf({quantity:Number(e.target.value)}),style:inp})),
+        React.createElement("div",null,React.createElement("label",{style:lbl},"Unità"),React.createElement("select",{value:form.unit,onChange:e=>sf({unit:e.target.value}),style:inp},UNITS.map(u=>React.createElement("option",{key:u},u)))),
+        React.createElement("div",null,React.createElement("label",{style:lbl},"Scadenza"),React.createElement("input",{type:"date",value:form.expiry,onChange:e=>sf({expiry:e.target.value}),style:inp})),
+        React.createElement("div",null,React.createElement("label",{style:lbl},"Note"),React.createElement("input",{value:form.notes,onChange:e=>sf({notes:e.target.value}),style:inp,placeholder:"facoltativo"}))
+      ),
+      React.createElement("div",{style:{display:"flex",gap:8,marginTop:14}},
+        React.createElement("button",{onClick:handleSave,style:btn("#5C7A5A")},"💾 Salva"),
+        React.createElement("button",{onClick:()=>{setShowForm(false);resetForm();},style:btn("#9e9e9e")},"Annulla")
+      )
+    ),
+    Object.keys(grouped).length===0?
+      React.createElement("div",{style:{textAlign:"center",padding:60,color:"#9e8c7a"}},
+        React.createElement("div",{style:{fontSize:48}},"📦"),
+        React.createElement("p",{style:{marginTop:12}},"La dispensa è vuota. Aggiungi il primo prodotto!")
+      ):
+      Object.entries(grouped).map(([cat,items])=>React.createElement("div",{key:cat,style:{marginBottom:18}},
+        React.createElement("h3",{style:{margin:"0 0 8px",fontSize:15,color:"#5C7A5A",display:"flex",alignItems:"center",gap:5}},
+          CAT_ICONS[cat]||"📦"," ",cat," ",React.createElement("span",{style:{color:"#9e8c7a",fontWeight:400,fontSize:12}},"(",items.length,")")
+        ),
+        React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:7}},
+          items.map(item=>{
+            const st=ST[expiryStatus(item.expiry)];
+            return React.createElement("div",{key:item.id,style:{background:"#fff",borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,border:"1.5px solid #ede8e0",flexWrap:"wrap"}},
+              React.createElement("div",{style:{flex:1,minWidth:100}},
+                React.createElement("span",{style:{fontWeight:600,fontSize:14}},item.name),
+                item.notes&&React.createElement("span",{style:{color:"#9e8c7a",fontSize:12,marginLeft:6}},"(",item.notes,")")
+              ),
+              React.createElement("div",{style:{display:"flex",alignItems:"center",gap:5}},
+                React.createElement("button",{onClick:()=>adjustQty(item.id,-1),style:{...sBtn,background:"#f0ebe3"}},"−"),
+                React.createElement("span",{style:{fontWeight:700,minWidth:50,textAlign:"center",fontSize:14}},item.quantity," ",item.unit),
+                React.createElement("button",{onClick:()=>adjustQty(item.id,+1),style:{...sBtn,background:"#e8f5e9",color:"#2e7d32"}},"+")
+              ),
+              item.expiry&&React.createElement("span",{style:{background:st.bg,color:st.color,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:600}},
+                fmtDate(item.expiry)," · ",st.label
+              ),
+              React.createElement("div",{style:{display:"flex",gap:5}},
+                React.createElement("button",{onClick:()=>handleEdit(item),style:{...sBtn,background:"#e3f0ff",color:"#1565c0"}},"✏️"),
+                React.createElement("button",{onClick:()=>handleDelete(item.id),style:{...sBtn,background:"#ffebee",color:"#c62828"}},"🗑️")
+              )
+            );
+          })
+        )
+      ))
+  );
+}
+
+function BaseMenuTab({baseMenu,setBaseMenu}) {
+  const [editing,setEditing]=useState(null);
+  const [val,setVal]=useState("");
+  const startEdit=(day,meal,cur)=>{setEditing(day+"-"+meal);setVal(cur||"");};
+  const confirmEdit=(day,meal)=>{setBaseMenu(m=>({...m,[day]:{...m[day],[meal]:val}}));setEditing(null);};
+
+  return React.createElement("div",null,
+    React.createElement("h2",{style:{margin:"0 0 4px",color:"#5C7A5A"}},"📋 Menù Base"),
+    React.createElement("p",{style:{margin:"0 0 16px",color:"#9e8c7a",fontSize:13}},"Template ricorrente — tocca una cella per modificarla"),
+    React.createElement("div",{style:{overflowX:"auto",WebkitOverflowScrolling:"touch"}},
+      React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 2px 12px #0001",minWidth:580}},
+        React.createElement("thead",null,
+          React.createElement("tr",{style:{background:"#5C7A5A",color:"#FAF7F2"}},
+            React.createElement("th",{style:{padding:"10px 12px",textAlign:"left",fontWeight:600,fontSize:13}},"Pasto"),
+            DAYS.map(d=>React.createElement("th",{key:d,style:{padding:"10px 5px",fontWeight:600,fontSize:12}},d.slice(0,3)))
+          )
+        ),
+        React.createElement("tbody",null,
+          MEALS.map((meal,mi)=>React.createElement("tr",{key:meal,style:{background:mi%2===0?"#FAF7F2":"#fff"}},
+            React.createElement("td",{style:{padding:"10px 12px",fontWeight:600,color:"#6B4E3D",fontSize:13,whiteSpace:"nowrap"}},
+              (meal==="Pranzo"?"🍽️":"🌙")+" "+meal
+            ),
+            DAYS.map(day=>{
+              const key=day+"-"+meal;
+              const isEd=editing===key;
+              return React.createElement("td",{key:day,style:{padding:"6px 4px",textAlign:"center",minWidth:85}},
+                isEd?React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:3}},
+                  React.createElement("input",{autoFocus:true,value:val,onChange:e=>setVal(e.target.value),
+                    onKeyDown:e=>{if(e.key==="Enter")confirmEdit(day,meal);if(e.key==="Escape")setEditing(null);},
+                    style:{width:"100%",padding:"4px 5px",borderRadius:6,border:"1.5px solid #5C7A5A",fontSize:11,textAlign:"center"}}),
+                  React.createElement("div",{style:{display:"flex",gap:3,justifyContent:"center"}},
+                    React.createElement("button",{onClick:()=>confirmEdit(day,meal),style:{...sBtn,background:"#e8f5e9",color:"#2e7d32",fontSize:11,padding:"3px 8px"}},"✓"),
+                    React.createElement("button",{onClick:()=>setEditing(null),style:{...sBtn,background:"#ffebee",color:"#c62828",fontSize:11,padding:"3px 8px"}},"✕")
+                  )
+                ):React.createElement("div",{onClick:()=>startEdit(day,meal,baseMenu[day]?.[meal]),
+                  style:{cursor:"pointer",minHeight:34,padding:"4px 5px",borderRadius:6,fontSize:11,
+                    background:baseMenu[day]?.[meal]?"#f0f7ee":"transparent",
+                    color:baseMenu[day]?.[meal]?"#2e5c28":"#ccc",
+                    border:"1px dashed",borderColor:baseMenu[day]?.[meal]?"#a5c8a2":"#e0d9d0",
+                    display:"flex",alignItems:"center",justifyContent:"center"}},
+                  baseMenu[day]?.[meal]||"+"
+                )
+              );
+            })
+          ))
+        )
+      )
+    )
+  );
+}
+
+function WeeklyTab({baseMenu,weeklyMenus,setWeeklyMenus,inventory,setInventory}) {
+  const [weekKey,setWeekKey]=useState(()=>getWeekKey(new Date()));
+  const [editing,setEditing]=useState(null);
+  const [val,setVal]=useState("");
+  const [consumed,setConsumed]=useState({});
+
+  const wm=weeklyMenus[weekKey]||{};
+  const getCell=(day,meal)=>{
+    const wv=wm[day]?.[meal];
+    if(wv!==undefined) return wv;
+    return baseMenu[day]?.[meal]||"";
+  };
+
+  const startEdit=(day,meal)=>{setEditing(day+"-"+meal);setVal(getCell(day,meal));};
+  const confirmEdit=(day,meal)=>{
+    setWeeklyMenus(w=>({...w,[weekKey]:{...(w[weekKey]||{}),[day]:{...(w[weekKey]?.[day]||{}),[meal]:val}}}));
+    setEditing(null);
+  };
+
+  const copyFromBase=()=>{
+    const copy={};
+    DAYS.forEach(d=>{copy[d]={};MEALS.forEach(m=>{copy[d][m]=baseMenu[d]?.[m]||"";});});
+    setWeeklyMenus(w=>({...w,[weekKey]:copy}));
+  };
+
+  const resetToBase=()=>{
+    if(window.confirm("Ripristinare il menù base per questa settimana?"))
+      setWeeklyMenus(w=>{const n={...w};delete n[weekKey];return n;});
+  };
+
+  const changeWeek=(delta)=>{
+    const d=new Date(weekKey);d.setDate(d.getDate()+delta*7);setWeekKey(getWeekKey(d));
+  };
+
+  const weekLabel=()=>{
+    const d=new Date(weekKey);const end=new Date(weekKey);end.setDate(end.getDate()+6);
+    return d.getDate()+"/"+(d.getMonth()+1)+" – "+end.getDate()+"/"+(end.getMonth()+1)+"/"+end.getFullYear();
+  };
+
+  const ck=(day,meal)=>weekKey+"-"+day+"-"+meal;
+
+  const markConsumed=(day,meal)=>{
+    const k=ck(day,meal);const dish=getCell(day,meal);
+    if(!dish||consumed[k]) return;
+    const match=inventory.find(i=>i.name.toLowerCase()===dish.toLowerCase()&&i.quantity>0);
+    if(match) setInventory(inv=>inv.map(i=>i.id===match.id?{...i,quantity:i.quantity-1}:i));
+    setConsumed(c=>({...c,[k]:true}));
+  };
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}},
+      React.createElement("div",null,
+        React.createElement("h2",{style:{margin:"0 0 4px",color:"#5C7A5A"}},"📅 Menù Settimanale"),
+        React.createElement("p",{style:{margin:0,color:"#9e8c7a",fontSize:13}},"Tocca una cella per modificare")
+      ),
+      React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}},
+        React.createElement("button",{onClick:()=>changeWeek(-1),style:{...sBtn,fontSize:18,padding:"4px 10px"}},"‹"),
+        React.createElement("span",{style:{fontWeight:600,fontSize:13,color:"#5C7A5A"}},weekLabel()),
+        React.createElement("button",{onClick:()=>changeWeek(+1),style:{...sBtn,fontSize:18,padding:"4px 10px"}},"›"),
+        React.createElement("button",{onClick:copyFromBase,style:btn("#D47A3E",true)},"📋 Copia base"),
+        React.createElement("button",{onClick:resetToBase,style:btn("#9e9e9e",true)},"↺ Reset")
+      )
+    ),
+    React.createElement("div",{style:{overflowX:"auto",WebkitOverflowScrolling:"touch"}},
+      React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 2px 12px #0001",minWidth:580}},
+        React.createElement("thead",null,
+          React.createElement("tr",{style:{background:"#5C7A5A",color:"#FAF7F2"}},
+            React.createElement("th",{style:{padding:"10px 12px",textAlign:"left",fontWeight:600,fontSize:13}},"Pasto"),
+            DAYS.map(d=>React.createElement("th",{key:d,style:{padding:"10px 5px",fontWeight:600,fontSize:12}},d.slice(0,3)))
+          )
+        ),
+        React.createElement("tbody",null,
+          MEALS.map((meal,mi)=>React.createElement("tr",{key:meal,style:{background:mi%2===0?"#FAF7F2":"#fff"}},
+            React.createElement("td",{style:{padding:"10px 12px",fontWeight:600,color:"#6B4E3D",fontSize:13,whiteSpace:"nowrap"}},
+              (meal==="Pranzo"?"🍽️":"🌙")+" "+meal
+            ),
+            DAYS.map(day=>{
+              const key=day+"-"+meal;
+              const k=ck(day,meal);
+              const isEd=editing===key;
+              const cell=getCell(day,meal);
+              const isCons=consumed[k];
+              const isMod=wm[day]?.[meal]!==undefined&&wm[day]?.[meal]!==(baseMenu[day]?.[meal]||"");
+              return React.createElement("td",{key:day,style:{padding:"5px 3px",textAlign:"center",minWidth:88}},
+                isEd?React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:3}},
+                  React.createElement("input",{autoFocus:true,value:val,onChange:e=>setVal(e.target.value),
+                    onKeyDown:e=>{if(e.key==="Enter")confirmEdit(day,meal);if(e.key==="Escape")setEditing(null);},
+                    style:{width:"100%",padding:"4px 5px",borderRadius:6,border:"1.5px solid #5C7A5A",fontSize:11,textAlign:"center"}}),
+                  React.createElement("div",{style:{display:"flex",gap:3,justifyContent:"center"}},
+                    React.createElement("button",{onClick:()=>confirmEdit(day,meal),style:{...sBtn,background:"#e8f5e9",color:"#2e7d32",fontSize:11,padding:"3px 8px"}},"✓"),
+                    React.createElement("button",{onClick:()=>setEditing(null),style:{...sBtn,background:"#ffebee",color:"#c62828",fontSize:11,padding:"3px 8px"}},"✕")
+                  )
+                ):React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:2}},
+                  React.createElement("div",{onClick:()=>startEdit(day,meal),
+                    style:{cursor:"pointer",minHeight:30,padding:"3px 5px",borderRadius:6,fontSize:11,
+                      background:isCons?"#e8f5e9":isMod?"#fff8e1":cell?"#f0f7ee":"transparent",
+                      color:isCons?"#2e7d32":isMod?"#f57f17":cell?"#2e5c28":"#ccc",
+                      border:"1px solid",borderColor:isCons?"#a5d6a7":isMod?"#ffe082":cell?"#a5c8a2":"#e0d9d0",
+                      textDecoration:isCons?"line-through":"none",
+                      display:"flex",alignItems:"center",justifyContent:"center"}},
+                    cell||"+"
+                  ),
+                  cell&&!isCons&&React.createElement("button",{onClick:()=>markConsumed(day,meal),
+                    style:{fontSize:9,padding:"2px 3px",borderRadius:4,border:"none",background:"#e8f5e9",color:"#2e7d32",cursor:"pointer"}},
+                    "✓ Consumato"
+                  )
+                )
+              );
+            })
+          ))
+        )
+      )
+    ),
+    React.createElement("p",{style:{fontSize:11,color:"#9e8c7a",marginTop:10}},"🟡 Modificato · 🟢 Da base · ✓ Consumato (scala inventario)")
+  );
+}
+
+function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
+  const now=new Date();
+  const [month,setMonth]=useState(now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0"));
+  const [extraItems,setExtraItems]=useState([]);
+  const [newExtra,setNewExtra]=useState({name:"",quantity:1,unit:"pz"});
+  const [checked,setChecked]=useState({});
+
+  const [year,mon]=month.split("-").map(Number);
+
+  const getDishes=()=>{
+    const dishes=new Set();
+    Object.entries(weeklyMenus).forEach(([wk,wm])=>{
+      const d=new Date(wk);
+      if(d.getFullYear()===year&&d.getMonth()+1===mon)
+        DAYS.forEach(day=>MEALS.forEach(meal=>{const v=wm[day]?.[meal];if(v)dishes.add(v);}));
+    });
+    DAYS.forEach(day=>MEALS.forEach(meal=>{const v=baseMenu[day]?.[meal];if(v)dishes.add(v);}));
+    return [...dishes];
+  };
+
+  const dishes=getDishes();
+  const missing=dishes.filter(d=>{const m=inventory.find(i=>i.name.toLowerCase()===d.toLowerCase());return!m||m.quantity===0;});
+  const avail=dishes.filter(d=>{const m=inventory.find(i=>i.name.toLowerCase()===d.toLowerCase());return m&&m.quantity>0;});
+
+  const toggle=(k)=>setChecked(c=>({...c,[k]:!c[k]}));
+  const addExtra=()=>{
+    if(!newExtra.name.trim()) return;
+    setExtraItems(e=>[...e,{...newExtra,id:Date.now()}]);
+    setNewExtra({name:"",quantity:1,unit:"pz"});
+  };
+  const changeMonth=(delta)=>{
+    const [y,m]=month.split("-").map(Number);
+    const d=new Date(y,m-1+delta,1);
+    setMonth(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"));
+  };
+  const monthLabel=new Date(year,mon-1,1).toLocaleDateString("it-IT",{month:"long",year:"numeric"});
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}},
+      React.createElement("div",null,
+        React.createElement("h2",{style:{margin:"0 0 4px",color:"#5C7A5A"}},"🛒 Lista della Spesa"),
+        React.createElement("p",{style:{margin:0,color:"#9e8c7a",fontSize:13}},"Cosa manca per il menù del mese")
+      ),
+      React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+        React.createElement("button",{onClick:()=>changeMonth(-1),style:{...sBtn,fontSize:18,padding:"4px 10px"}},"‹"),
+        React.createElement("span",{style:{fontWeight:600,fontSize:13,color:"#5C7A5A",textTransform:"capitalize"}},monthLabel),
+        React.createElement("button",{onClick:()=>changeMonth(+1),style:{...sBtn,fontSize:18,padding:"4px 10px"}},"›")
+      )
+    ),
+    React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,marginBottom:14,border:"1.5px solid #ede8e0"}},
+      React.createElement("h3",{style:{margin:"0 0 12px",color:"#c62828",fontSize:15}},"❌ Da acquistare ("+missing.length+")"),
+      missing.length===0?
+        React.createElement("p",{style:{color:"#9e8c7a",margin:0}},"🎉 Hai tutto in dispensa!"):
+        missing.map(dish=>React.createElement("div",{key:dish,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ebe3"}},
+          React.createElement("input",{type:"checkbox",checked:!!checked[dish],onChange:()=>toggle(dish),style:{width:18,height:18,accentColor:"#5C7A5A",cursor:"pointer",flexShrink:0}}),
+          React.createElement("span",{style:{flex:1,textDecoration:checked[dish]?"line-through":"none",color:checked[dish]?"#9e8c7a":"inherit",fontSize:14}},dish)
+        ))
+    ),
+    React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,marginBottom:14,border:"1.5px solid #ede8e0"}},
+      React.createElement("h3",{style:{margin:"0 0 12px",color:"#D47A3E",fontSize:15}},"➕ Extra / Detersivi"),
+      React.createElement("div",{style:{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}},
+        React.createElement("input",{value:newExtra.name,onChange:e=>setNewExtra({...newExtra,name:e.target.value}),placeholder:"Nome prodotto",style:{...inp,flex:1,minWidth:120}}),
+        React.createElement("input",{type:"number",min:"1",value:newExtra.quantity,onChange:e=>setNewExtra({...newExtra,quantity:Number(e.target.value)}),style:{...inp,width:65}}),
+        React.createElement("select",{value:newExtra.unit,onChange:e=>setNewExtra({...newExtra,unit:e.target.value}),style:{...inp,width:80}},
+          UNITS.map(u=>React.createElement("option",{key:u},u))
+        ),
+        React.createElement("button",{onClick:addExtra,style:btn("#D47A3E")},"+ Aggiungi")
+      ),
+      extraItems.map(item=>React.createElement("div",{key:item.id,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ebe3"}},
+        React.createElement("input",{type:"checkbox",checked:!!checked["x-"+item.id],onChange:()=>toggle("x-"+item.id),style:{width:18,height:18,accentColor:"#D47A3E",cursor:"pointer",flexShrink:0}}),
+        React.createElement("span",{style:{flex:1,textDecoration:checked["x-"+item.id]?"line-through":"none",color:checked["x-"+item.id]?"#9e8c7a":"inherit",fontSize:14}},
+          item.name+" — "+item.quantity+" "+item.unit
+        ),
+        React.createElement("button",{onClick:()=>setExtraItems(e=>e.filter(i=>i.id!==item.id)),style:{...sBtn,background:"#ffebee",color:"#c62828",padding:"3px 8px"}},"✕")
+      ))
+    ),
+    React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,border:"1.5px solid #ede8e0"}},
+      React.createElement("h3",{style:{margin:"0 0 12px",color:"#2e7d32",fontSize:15}},"✅ Già in dispensa ("+avail.length+")"),
+      avail.map(dish=>{
+        const match=inventory.find(i=>i.name.toLowerCase()===dish.toLowerCase());
+        return React.createElement("div",{key:dish,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ebe3"}},
+          React.createElement("span",{style:{color:"#2e7d32",flexShrink:0}},"✓"),
+          React.createElement("span",{style:{flex:1,fontSize:14}},dish),
+          match&&React.createElement("span",{style:{color:"#9e8c7a",fontSize:12}},match.quantity+" "+match.unit)
+        );
+      })
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
