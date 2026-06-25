@@ -21,17 +21,26 @@ input, select, button { font-family: inherit; }
 <script type="text/babel">
 const { useState, useEffect } = React;
 
-const SK = { inv:"dispensa_inventory", base:"dispensa_baseMenu", weekly:"dispensa_weeklyMenus" };
+const SK = { inv:"dispensa_inventory", base:"dispensa_baseMenu2", weekly:"dispensa_weeklyMenus2" };
 const load = (k, fb) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):fb; } catch { return fb; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 const DAYS = ["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
 const MEALS = ["Pranzo","Cena"];
+const WEEKS = ["Settimana 1","Settimana 2"];
 const CATEGORIES = ["Pasta & Riso","Carne","Pesce","Verdura","Frutta","Latticini","Scatolame","Pane & Cereali","Bevande","Detersivi","Altro"];
 const CAT_ICONS = {"Pasta & Riso":"🍝","Carne":"🥩","Pesce":"🐟","Verdura":"🥦","Frutta":"🍎","Latticini":"🧀","Scatolame":"🥫","Pane & Cereali":"🍞","Bevande":"🥤","Detersivi":"🧴","Altro":"📦"};
 const UNITS = ["pz","kg","g","L","ml","conf","busta","barattolo","bottiglia"];
 
-const emptyBase = () => { const m={}; DAYS.forEach(d=>{m[d]={Pranzo:"",Cena:""}}); return m; };
+// Base menu: { "Settimana 1": { "Lunedì": { "Pranzo": ["Pasta","Pollo"], "Cena": [] } } }
+const emptyBase = () => {
+  const m={};
+  WEEKS.forEach(w=>{
+    m[w]={};
+    DAYS.forEach(d=>{ m[w][d]={Pranzo:[],Cena:[]}; });
+  });
+  return m;
+};
 
 const getWeekKey = (date) => {
   const d=new Date(date); d.setHours(0,0,0,0);
@@ -59,6 +68,53 @@ const lbl = {display:"block",fontSize:12,fontWeight:600,color:"#6B4E3D",marginBo
 const sBtn = {border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontWeight:600,fontSize:14,background:"#f0ebe3",color:"#2C2417"};
 const btn = (bg,sm) => ({background:bg,color:"#fff",border:"none",borderRadius:8,padding:sm?"6px 12px":"8px 16px",fontWeight:600,fontSize:sm?13:14,cursor:"pointer",whiteSpace:"nowrap"});
 
+// ── CELL EDITOR: lista di portate con + e x ───────────────────
+function CellEditor({dishes, onSave, onCancel}) {
+  const [items, setItems] = useState(dishes.length>0 ? [...dishes] : [""]);
+  const update = (i,v) => { const a=[...items]; a[i]=v; setItems(a); };
+  const addRow = () => setItems(a=>[...a,""]);
+  const removeRow = (i) => { const a=items.filter((_,j)=>j!==i); setItems(a.length?a:[""]); };
+  const commit = () => onSave(items.filter(s=>s.trim()));
+
+  return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4,minWidth:100}},
+    items.map((v,i)=>React.createElement("div",{key:i,style:{display:"flex",gap:3,alignItems:"center"}},
+      React.createElement("input",{autoFocus:i===0,value:v,onChange:e=>update(i,e.target.value),
+        onKeyDown:e=>{if(e.key==="Enter"){e.preventDefault();if(i===items.length-1)addRow();}if(e.key==="Escape")onCancel();},
+        style:{flex:1,padding:"3px 5px",borderRadius:5,border:"1.5px solid #5C7A5A",fontSize:11}}),
+      items.length>1&&React.createElement("button",{onClick:()=>removeRow(i),
+        style:{border:"none",background:"none",color:"#c62828",cursor:"pointer",fontSize:13,padding:"0 2px",lineHeight:1}},"×")
+    )),
+    React.createElement("div",{style:{display:"flex",gap:3,marginTop:2}},
+      React.createElement("button",{onClick:addRow,style:{...sBtn,fontSize:10,padding:"2px 6px",background:"#e8f5e9",color:"#2e7d32"}},"+"),
+      React.createElement("button",{onClick:commit,style:{...sBtn,fontSize:10,padding:"2px 6px",background:"#e8f5e9",color:"#2e7d32",flex:1}},"✓ OK"),
+      React.createElement("button",{onClick:onCancel,style:{...sBtn,fontSize:10,padding:"2px 6px",background:"#ffebee",color:"#c62828"}},"✕")
+    )
+  );
+}
+
+// ── CELL DISPLAY ──────────────────────────────────────────────
+function CellDisplay({dishes, onClick, consumed, onConsume}) {
+  if(dishes.length===0) return React.createElement("div",{onClick,
+    style:{cursor:"pointer",minHeight:34,borderRadius:6,fontSize:11,color:"#ccc",
+      border:"1px dashed #e0d9d0",display:"flex",alignItems:"center",justifyContent:"center"}},"+");
+
+  return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:2}},
+    dishes.map((d,i)=>{
+      const isCons=consumed&&consumed[i];
+      return React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",gap:2}},
+        React.createElement("div",{onClick,style:{flex:1,cursor:"pointer",padding:"2px 4px",borderRadius:5,fontSize:11,
+          background:isCons?"#e8f5e9":"#f0f7ee",
+          color:isCons?"#2e7d32":"#2e5c28",
+          border:"1px solid",borderColor:isCons?"#a5d6a7":"#a5c8a2",
+          textDecoration:isCons?"line-through":"none",
+          textAlign:"center"}},d),
+        onConsume&&!isCons&&React.createElement("button",{onClick:()=>onConsume(i),
+          style:{border:"none",background:"#e8f5e9",color:"#2e7d32",borderRadius:4,cursor:"pointer",fontSize:9,padding:"1px 3px"}},"✓")
+      );
+    })
+  );
+}
+
 function App() {
   const [tab,setTab]=useState("dispensa");
   const [inventory,setInventory]=useState(()=>load(SK.inv,[]));
@@ -76,32 +132,31 @@ function App() {
     {id:"shopping",label:"🛒 Spesa"},
   ];
 
-  return (
-    React.createElement("div",{style:{minHeight:"100vh",background:"#FAF7F2"}},
-      React.createElement("div",{style:{background:"#5C7A5A",color:"#FAF7F2",padding:"16px 16px 0",boxShadow:"0 2px 12px #0002",position:"sticky",top:0,zIndex:100}},
-        React.createElement("div",{style:{maxWidth:960,margin:"0 auto"}},
-          React.createElement("h1",{style:{margin:"0 0 2px",fontSize:20,fontWeight:700}},"🥫 La Mia Dispensa"),
-          React.createElement("p",{style:{margin:"0 0 12px",fontSize:12,opacity:.8}},"Inventario · Menù · Spesa"),
-          React.createElement("div",{style:{display:"flex",gap:3,overflowX:"auto"}},
-            tabs.map(t=>React.createElement("button",{key:t.id,onClick:()=>setTab(t.id),style:{
-              background:tab===t.id?"#FAF7F2":"transparent",
-              color:tab===t.id?"#5C7A5A":"#FAF7F2",
-              border:"none",borderRadius:"8px 8px 0 0",padding:"8px 12px",
-              fontWeight:600,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0
-            }},t.label))
-          )
+  return React.createElement("div",{style:{minHeight:"100vh",background:"#FAF7F2"}},
+    React.createElement("div",{style:{background:"#5C7A5A",color:"#FAF7F2",padding:"16px 16px 0",boxShadow:"0 2px 12px #0002",position:"sticky",top:0,zIndex:100}},
+      React.createElement("div",{style:{maxWidth:960,margin:"0 auto"}},
+        React.createElement("h1",{style:{margin:"0 0 2px",fontSize:20,fontWeight:700}},"🥫 La Mia Dispensa"),
+        React.createElement("p",{style:{margin:"0 0 12px",fontSize:12,opacity:.8}},"Inventario · Menù · Spesa"),
+        React.createElement("div",{style:{display:"flex",gap:3,overflowX:"auto"}},
+          tabs.map(t=>React.createElement("button",{key:t.id,onClick:()=>setTab(t.id),style:{
+            background:tab===t.id?"#FAF7F2":"transparent",
+            color:tab===t.id?"#5C7A5A":"#FAF7F2",
+            border:"none",borderRadius:"8px 8px 0 0",padding:"8px 12px",
+            fontWeight:600,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0
+          }},t.label))
         )
-      ),
-      React.createElement("div",{style:{maxWidth:960,margin:"0 auto",padding:"20px 12px 40px"}},
-        tab==="dispensa"&&React.createElement(DispensaTab,{inventory,setInventory}),
-        tab==="basemenu"&&React.createElement(BaseMenuTab,{baseMenu,setBaseMenu}),
-        tab==="weekly"&&React.createElement(WeeklyTab,{baseMenu,weeklyMenus,setWeeklyMenus,inventory,setInventory}),
-        tab==="shopping"&&React.createElement(ShoppingTab,{inventory,weeklyMenus,baseMenu})
       )
+    ),
+    React.createElement("div",{style:{maxWidth:960,margin:"0 auto",padding:"20px 12px 40px"}},
+      tab==="dispensa"&&React.createElement(DispensaTab,{inventory,setInventory}),
+      tab==="basemenu"&&React.createElement(BaseMenuTab,{baseMenu,setBaseMenu}),
+      tab==="weekly"&&React.createElement(WeeklyTab,{baseMenu,weeklyMenus,setWeeklyMenus,inventory,setInventory}),
+      tab==="shopping"&&React.createElement(ShoppingTab,{inventory,weeklyMenus,baseMenu})
     )
   );
 }
 
+// ── DISPENSA TAB ─────────────────────────────────────────────────
 function DispensaTab({inventory,setInventory}) {
   const [showForm,setShowForm]=useState(false);
   const [editId,setEditId]=useState(null);
@@ -211,15 +266,37 @@ function DispensaTab({inventory,setInventory}) {
   );
 }
 
+// ── BASE MENU TAB ─────────────────────────────────────────────────
 function BaseMenuTab({baseMenu,setBaseMenu}) {
-  const [editing,setEditing]=useState(null);
-  const [val,setVal]=useState("");
-  const startEdit=(day,meal,cur)=>{setEditing(day+"-"+meal);setVal(cur||"");};
-  const confirmEdit=(day,meal)=>{setBaseMenu(m=>({...m,[day]:{...m[day],[meal]:val}}));setEditing(null);};
+  const [activeWeek,setActiveWeek]=useState("Settimana 1");
+  const [editing,setEditing]=useState(null); // "day-meal"
+
+  const getDishes=(day,meal)=>(baseMenu[activeWeek]?.[day]?.[meal])||[];
+
+  const saveCell=(day,meal,dishes)=>{
+    setBaseMenu(m=>({
+      ...m,
+      [activeWeek]:{
+        ...(m[activeWeek]||{}),
+        [day]:{
+          ...(m[activeWeek]?.[day]||{}),
+          [meal]:dishes
+        }
+      }
+    }));
+    setEditing(null);
+  };
 
   return React.createElement("div",null,
     React.createElement("h2",{style:{margin:"0 0 4px",color:"#5C7A5A"}},"📋 Menù Base"),
-    React.createElement("p",{style:{margin:"0 0 16px",color:"#9e8c7a",fontSize:13}},"Template ricorrente — tocca una cella per modificarla"),
+    React.createElement("p",{style:{margin:"0 0 14px",color:"#9e8c7a",fontSize:13}},"Programmazione a 15 giorni — tocca una cella per modificare le portate"),
+    // Week tabs
+    React.createElement("div",{style:{display:"flex",gap:6,marginBottom:16}},
+      WEEKS.map(w=>React.createElement("button",{key:w,onClick:()=>{setActiveWeek(w);setEditing(null);},style:{
+        padding:"7px 18px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,
+        background:activeWeek===w?"#5C7A5A":"#e8e2d9",color:activeWeek===w?"#fff":"#6B4E3D"
+      }},w))
+    ),
     React.createElement("div",{style:{overflowX:"auto",WebkitOverflowScrolling:"touch"}},
       React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 2px 12px #0001",minWidth:580}},
         React.createElement("thead",null,
@@ -229,30 +306,18 @@ function BaseMenuTab({baseMenu,setBaseMenu}) {
           )
         ),
         React.createElement("tbody",null,
-          MEALS.map((meal,mi)=>React.createElement("tr",{key:meal,style:{background:mi%2===0?"#FAF7F2":"#fff"}},
+          MEALS.map((meal,mi)=>React.createElement("tr",{key:meal,style:{background:mi%2===0?"#FAF7F2":"#fff",verticalAlign:"top"}},
             React.createElement("td",{style:{padding:"10px 12px",fontWeight:600,color:"#6B4E3D",fontSize:13,whiteSpace:"nowrap"}},
               (meal==="Pranzo"?"🍽️":"🌙")+" "+meal
             ),
             DAYS.map(day=>{
               const key=day+"-"+meal;
               const isEd=editing===key;
-              return React.createElement("td",{key:day,style:{padding:"6px 4px",textAlign:"center",minWidth:85}},
-                isEd?React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:3}},
-                  React.createElement("input",{autoFocus:true,value:val,onChange:e=>setVal(e.target.value),
-                    onKeyDown:e=>{if(e.key==="Enter")confirmEdit(day,meal);if(e.key==="Escape")setEditing(null);},
-                    style:{width:"100%",padding:"4px 5px",borderRadius:6,border:"1.5px solid #5C7A5A",fontSize:11,textAlign:"center"}}),
-                  React.createElement("div",{style:{display:"flex",gap:3,justifyContent:"center"}},
-                    React.createElement("button",{onClick:()=>confirmEdit(day,meal),style:{...sBtn,background:"#e8f5e9",color:"#2e7d32",fontSize:11,padding:"3px 8px"}},"✓"),
-                    React.createElement("button",{onClick:()=>setEditing(null),style:{...sBtn,background:"#ffebee",color:"#c62828",fontSize:11,padding:"3px 8px"}},"✕")
-                  )
-                ):React.createElement("div",{onClick:()=>startEdit(day,meal,baseMenu[day]?.[meal]),
-                  style:{cursor:"pointer",minHeight:34,padding:"4px 5px",borderRadius:6,fontSize:11,
-                    background:baseMenu[day]?.[meal]?"#f0f7ee":"transparent",
-                    color:baseMenu[day]?.[meal]?"#2e5c28":"#ccc",
-                    border:"1px dashed",borderColor:baseMenu[day]?.[meal]?"#a5c8a2":"#e0d9d0",
-                    display:"flex",alignItems:"center",justifyContent:"center"}},
-                  baseMenu[day]?.[meal]||"+"
-                )
+              const dishes=getDishes(day,meal);
+              return React.createElement("td",{key:day,style:{padding:"6px 4px",textAlign:"center",minWidth:95,verticalAlign:"top"}},
+                isEd?
+                  React.createElement(CellEditor,{dishes,onSave:d=>saveCell(day,meal,d),onCancel:()=>setEditing(null)}):
+                  React.createElement(CellDisplay,{dishes,onClick:()=>setEditing(key)})
               );
             })
           ))
@@ -262,28 +327,47 @@ function BaseMenuTab({baseMenu,setBaseMenu}) {
   );
 }
 
+// ── WEEKLY MENU TAB ──────────────────────────────────────────────
 function WeeklyTab({baseMenu,weeklyMenus,setWeeklyMenus,inventory,setInventory}) {
   const [weekKey,setWeekKey]=useState(()=>getWeekKey(new Date()));
   const [editing,setEditing]=useState(null);
-  const [val,setVal]=useState("");
-  const [consumed,setConsumed]=useState({});
+  const [consumed,setConsumed]=useState({}); // {"weekKey-day-meal-idx": true}
 
   const wm=weeklyMenus[weekKey]||{};
+
+  // Returns array of dishes; weekly overrides base
   const getCell=(day,meal)=>{
-    const wv=wm[day]?.[meal];
-    if(wv!==undefined) return wv;
-    return baseMenu[day]?.[meal]||"";
+    if(wm[day]&&wm[day][meal]!==undefined) return wm[day][meal];
+    // figure out which base week to use based on week number of year
+    const d=new Date(weekKey);
+    const startOfYear=new Date(d.getFullYear(),0,1);
+    const weekNum=Math.ceil(((d-startOfYear)/86400000+startOfYear.getDay()+1)/7);
+    const baseWeek=weekNum%2===1?"Settimana 1":"Settimana 2";
+    return (baseMenu[baseWeek]?.[day]?.[meal])||[];
   };
 
-  const startEdit=(day,meal)=>{setEditing(day+"-"+meal);setVal(getCell(day,meal));};
-  const confirmEdit=(day,meal)=>{
-    setWeeklyMenus(w=>({...w,[weekKey]:{...(w[weekKey]||{}),[day]:{...(w[weekKey]?.[day]||{}),[meal]:val}}}));
+  const saveCell=(day,meal,dishes)=>{
+    setWeeklyMenus(w=>({...w,[weekKey]:{...(w[weekKey]||{}),[day]:{...(w[weekKey]?.[day]||{}),[meal]:dishes}}}));
     setEditing(null);
   };
 
+  const changeWeek=(delta)=>{
+    const d=new Date(weekKey);d.setDate(d.getDate()+delta*7);setWeekKey(getWeekKey(d));
+    setEditing(null);
+  };
+
+  const weekLabel=()=>{
+    const d=new Date(weekKey);const end=new Date(weekKey);end.setDate(end.getDate()+6);
+    return d.getDate()+"/"+(d.getMonth()+1)+" – "+end.getDate()+"/"+(end.getMonth()+1)+"/"+end.getFullYear();
+  };
+
   const copyFromBase=()=>{
+    const d=new Date(weekKey);
+    const startOfYear=new Date(d.getFullYear(),0,1);
+    const weekNum=Math.ceil(((d-startOfYear)/86400000+startOfYear.getDay()+1)/7);
+    const baseWeek=weekNum%2===1?"Settimana 1":"Settimana 2";
     const copy={};
-    DAYS.forEach(d=>{copy[d]={};MEALS.forEach(m=>{copy[d][m]=baseMenu[d]?.[m]||"";});});
+    DAYS.forEach(day=>{copy[day]={};MEALS.forEach(m=>{copy[day][m]=[...(baseMenu[baseWeek]?.[day]?.[m]||[])];});});
     setWeeklyMenus(w=>({...w,[weekKey]:copy}));
   };
 
@@ -292,30 +376,29 @@ function WeeklyTab({baseMenu,weeklyMenus,setWeeklyMenus,inventory,setInventory})
       setWeeklyMenus(w=>{const n={...w};delete n[weekKey];return n;});
   };
 
-  const changeWeek=(delta)=>{
-    const d=new Date(weekKey);d.setDate(d.getDate()+delta*7);setWeekKey(getWeekKey(d));
-  };
+  const ck=(day,meal,idx)=>weekKey+"-"+day+"-"+meal+"-"+idx;
 
-  const weekLabel=()=>{
-    const d=new Date(weekKey);const end=new Date(weekKey);end.setDate(end.getDate()+6);
-    return d.getDate()+"/"+(d.getMonth()+1)+" – "+end.getDate()+"/"+(end.getMonth()+1)+"/"+end.getFullYear();
-  };
-
-  const ck=(day,meal)=>weekKey+"-"+day+"-"+meal;
-
-  const markConsumed=(day,meal)=>{
-    const k=ck(day,meal);const dish=getCell(day,meal);
+  const markConsumed=(day,meal,idx)=>{
+    const k=ck(day,meal,idx);
+    const dishes=getCell(day,meal);
+    const dish=dishes[idx];
     if(!dish||consumed[k]) return;
     const match=inventory.find(i=>i.name.toLowerCase()===dish.toLowerCase()&&i.quantity>0);
     if(match) setInventory(inv=>inv.map(i=>i.id===match.id?{...i,quantity:i.quantity-1}:i));
     setConsumed(c=>({...c,[k]:true}));
   };
 
+  // figure out current base week label
+  const d=new Date(weekKey);
+  const startOfYear=new Date(d.getFullYear(),0,1);
+  const weekNum=Math.ceil(((d-startOfYear)/86400000+startOfYear.getDay()+1)/7);
+  const baseWeekLabel=weekNum%2===1?"Settimana 1":"Settimana 2";
+
   return React.createElement("div",null,
     React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}},
       React.createElement("div",null,
-        React.createElement("h2",{style:{margin:"0 0 4px",color:"#5C7A5A"}},"📅 Menù Settimanale"),
-        React.createElement("p",{style:{margin:0,color:"#9e8c7a",fontSize:13}},"Tocca una cella per modificare")
+        React.createElement("h2",{style:{margin:"0 0 2px",color:"#5C7A5A"}},"📅 Menù Settimanale"),
+        React.createElement("p",{style:{margin:0,color:"#9e8c7a",fontSize:12}},"Base applicata: "+baseWeekLabel+" · Tocca una cella per modificare")
       ),
       React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}},
         React.createElement("button",{onClick:()=>changeWeek(-1),style:{...sBtn,fontSize:18,padding:"4px 10px"}},"‹"),
@@ -334,51 +417,31 @@ function WeeklyTab({baseMenu,weeklyMenus,setWeeklyMenus,inventory,setInventory})
           )
         ),
         React.createElement("tbody",null,
-          MEALS.map((meal,mi)=>React.createElement("tr",{key:meal,style:{background:mi%2===0?"#FAF7F2":"#fff"}},
+          MEALS.map((meal,mi)=>React.createElement("tr",{key:meal,style:{background:mi%2===0?"#FAF7F2":"#fff",verticalAlign:"top"}},
             React.createElement("td",{style:{padding:"10px 12px",fontWeight:600,color:"#6B4E3D",fontSize:13,whiteSpace:"nowrap"}},
               (meal==="Pranzo"?"🍽️":"🌙")+" "+meal
             ),
             DAYS.map(day=>{
               const key=day+"-"+meal;
-              const k=ck(day,meal);
               const isEd=editing===key;
-              const cell=getCell(day,meal);
-              const isCons=consumed[k];
-              const isMod=wm[day]?.[meal]!==undefined&&wm[day]?.[meal]!==(baseMenu[day]?.[meal]||"");
-              return React.createElement("td",{key:day,style:{padding:"5px 3px",textAlign:"center",minWidth:88}},
-                isEd?React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:3}},
-                  React.createElement("input",{autoFocus:true,value:val,onChange:e=>setVal(e.target.value),
-                    onKeyDown:e=>{if(e.key==="Enter")confirmEdit(day,meal);if(e.key==="Escape")setEditing(null);},
-                    style:{width:"100%",padding:"4px 5px",borderRadius:6,border:"1.5px solid #5C7A5A",fontSize:11,textAlign:"center"}}),
-                  React.createElement("div",{style:{display:"flex",gap:3,justifyContent:"center"}},
-                    React.createElement("button",{onClick:()=>confirmEdit(day,meal),style:{...sBtn,background:"#e8f5e9",color:"#2e7d32",fontSize:11,padding:"3px 8px"}},"✓"),
-                    React.createElement("button",{onClick:()=>setEditing(null),style:{...sBtn,background:"#ffebee",color:"#c62828",fontSize:11,padding:"3px 8px"}},"✕")
-                  )
-                ):React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:2}},
-                  React.createElement("div",{onClick:()=>startEdit(day,meal),
-                    style:{cursor:"pointer",minHeight:30,padding:"3px 5px",borderRadius:6,fontSize:11,
-                      background:isCons?"#e8f5e9":isMod?"#fff8e1":cell?"#f0f7ee":"transparent",
-                      color:isCons?"#2e7d32":isMod?"#f57f17":cell?"#2e5c28":"#ccc",
-                      border:"1px solid",borderColor:isCons?"#a5d6a7":isMod?"#ffe082":cell?"#a5c8a2":"#e0d9d0",
-                      textDecoration:isCons?"line-through":"none",
-                      display:"flex",alignItems:"center",justifyContent:"center"}},
-                    cell||"+"
-                  ),
-                  cell&&!isCons&&React.createElement("button",{onClick:()=>markConsumed(day,meal),
-                    style:{fontSize:9,padding:"2px 3px",borderRadius:4,border:"none",background:"#e8f5e9",color:"#2e7d32",cursor:"pointer"}},
-                    "✓ Consumato"
-                  )
-                )
+              const dishes=getCell(day,meal);
+              const consumedMap={};
+              dishes.forEach((_,i)=>{consumedMap[i]=!!consumed[ck(day,meal,i)];});
+              return React.createElement("td",{key:day,style:{padding:"6px 4px",minWidth:95,verticalAlign:"top"}},
+                isEd?
+                  React.createElement(CellEditor,{dishes,onSave:d=>saveCell(day,meal,d),onCancel:()=>setEditing(null)}):
+                  React.createElement(CellDisplay,{dishes,onClick:()=>setEditing(key),consumed:consumedMap,onConsume:(idx)=>markConsumed(day,meal,idx)})
               );
             })
           ))
         )
       )
     ),
-    React.createElement("p",{style:{fontSize:11,color:"#9e8c7a",marginTop:10}},"🟡 Modificato · 🟢 Da base · ✓ Consumato (scala inventario)")
+    React.createElement("p",{style:{fontSize:11,color:"#9e8c7a",marginTop:10}},"✓ su ogni portata = segna come consumata e scala l'inventario")
   );
 }
 
+// ── SHOPPING TAB ─────────────────────────────────────────────────
 function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
   const now=new Date();
   const [month,setMonth]=useState(now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0"));
@@ -393,9 +456,15 @@ function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
     Object.entries(weeklyMenus).forEach(([wk,wm])=>{
       const d=new Date(wk);
       if(d.getFullYear()===year&&d.getMonth()+1===mon)
-        DAYS.forEach(day=>MEALS.forEach(meal=>{const v=wm[day]?.[meal];if(v)dishes.add(v);}));
+        DAYS.forEach(day=>MEALS.forEach(meal=>{
+          const arr=wm[day]?.[meal]||[];
+          arr.forEach(v=>{if(v)dishes.add(v);});
+        }));
     });
-    DAYS.forEach(day=>MEALS.forEach(meal=>{const v=baseMenu[day]?.[meal];if(v)dishes.add(v);}));
+    WEEKS.forEach(w=>DAYS.forEach(day=>MEALS.forEach(meal=>{
+      const arr=(baseMenu[w]?.[day]?.[meal])||[];
+      arr.forEach(v=>{if(v)dishes.add(v);});
+    })));
     return [...dishes];
   };
 
