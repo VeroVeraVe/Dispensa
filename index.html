@@ -451,26 +451,73 @@ function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
 
   const [year,mon]=month.split("-").map(Number);
 
-  const getDishes=()=>{
-    const dishes=new Set();
-    Object.entries(weeklyMenus).forEach(([wk,wm])=>{
-      const d=new Date(wk);
-      if(d.getFullYear()===year&&d.getMonth()+1===mon)
-        DAYS.forEach(day=>MEALS.forEach(meal=>{
-          const arr=wm[day]?.[meal]||[];
-          arr.forEach(v=>{if(v)dishes.add(v);});
-        }));
-    });
-    WEEKS.forEach(w=>DAYS.forEach(day=>MEALS.forEach(meal=>{
-      const arr=(baseMenu[w]?.[day]?.[meal])||[];
-      arr.forEach(v=>{if(v)dishes.add(v);});
-    })));
-    return [...dishes];
+  // Returns all weeks (Mon keys) that fall in the selected month
+  const getMonthWeeks=()=>{
+    const weeks=[];
+    const firstDay=new Date(year,mon-1,1);
+    const lastDay=new Date(year,mon,0);
+    // go back to Monday of the first week
+    const start=new Date(firstDay);
+    start.setDate(start.getDate()-((start.getDay()+6)%7));
+    const cur=new Date(start);
+    while(cur<=lastDay){
+      weeks.push(getWeekKey(cur));
+      cur.setDate(cur.getDate()+7);
+    }
+    return weeks;
   };
 
-  const dishes=getDishes();
-  const missing=dishes.filter(d=>{const m=inventory.find(i=>i.name.toLowerCase()===d.toLowerCase());return!m||m.quantity===0;});
-  const avail=dishes.filter(d=>{const m=inventory.find(i=>i.name.toLowerCase()===d.toLowerCase());return m&&m.quantity>0;});
+  // For a given weekKey, get the base week label to fall back on
+  const getBaseWeekLabel=(wk)=>{
+    const d=new Date(wk);
+    const startOfYear=new Date(d.getFullYear(),0,1);
+    const weekNum=Math.ceil(((d-startOfYear)/86400000+startOfYear.getDay()+1)/7);
+    return weekNum%2===1?"Settimana 1":"Settimana 2";
+  };
+
+  // Count occurrences of each dish across the month
+  // For each week: if weekly menu exists use it, else use base
+  const getDishCounts=()=>{
+    const counts={};
+    const add=(dish)=>{
+      if(!dish||!dish.trim()) return;
+      const k=dish.trim().toLowerCase();
+      if(!counts[k]) counts[k]={name:dish.trim(),count:0};
+      counts[k].count++;
+    };
+    getMonthWeeks().forEach(wk=>{
+      const wm=weeklyMenus[wk];
+      if(wm){
+        // use weekly menu for this week
+        DAYS.forEach(day=>MEALS.forEach(meal=>{
+          (wm[day]?.[meal]||[]).forEach(add);
+        }));
+      } else {
+        // fall back to base menu
+        const bw=getBaseWeekLabel(wk);
+        DAYS.forEach(day=>MEALS.forEach(meal=>{
+          ((baseMenu[bw]?.[day]?.[meal])||[]).forEach(add);
+        }));
+      }
+    });
+    return Object.values(counts);
+  };
+
+  const dishCounts=getDishCounts();
+
+  // Categorize: missing (0 in stock), insufficient (stock < needed), ok (stock >= needed)
+  const categorized=dishCounts.map(({name,count})=>{
+    const match=inventory.find(i=>i.name.toLowerCase()===name.toLowerCase());
+    const inStock=match?match.quantity:0;
+    const unit=match?match.unit:"pz";
+    const needed=count;
+    const toBuy=Math.max(0,needed-inStock);
+    return {name,count,inStock,unit,needed,toBuy};
+  });
+
+  const missing=categorized.filter(d=>d.inStock===0);
+  const insufficient=categorized.filter(d=>d.inStock>0&&d.toBuy>0);
+  const ok=categorized.filter(d=>d.toBuy===0);
 
   const toggle=(k)=>setChecked(c=>({...c,[k]:!c[k]}));
   const addExtra=()=>{
@@ -485,11 +532,26 @@ function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
   };
   const monthLabel=new Date(year,mon-1,1).toLocaleDateString("it-IT",{month:"long",year:"numeric"});
 
+  const rowStyle={display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ebe3"};
+
+  const DishRow=({d,accentColor})=>React.createElement("div",{style:rowStyle},
+    React.createElement("input",{type:"checkbox",checked:!!checked[d.name],onChange:()=>toggle(d.name),
+      style:{width:18,height:18,accentColor,cursor:"pointer",flexShrink:0}}),
+    React.createElement("span",{style:{flex:1,textDecoration:checked[d.name]?"line-through":"none",
+      color:checked[d.name]?"#9e8c7a":"inherit",fontSize:14}},d.name),
+    React.createElement("span",{style:{fontSize:12,color:"#9e8c7a",whiteSpace:"nowrap"}},
+      "×"+d.needed+" nel mese"),
+    React.createElement("span",{style:{fontSize:12,fontWeight:700,color:accentColor,
+      background:accentColor==="#c62828"?"#ffebee":"#fff3e0",
+      borderRadius:20,padding:"2px 9px",whiteSpace:"nowrap"}},
+      "Compra "+d.toBuy+" "+d.unit)
+  );
+
   return React.createElement("div",null,
     React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}},
       React.createElement("div",null,
         React.createElement("h2",{style:{margin:"0 0 4px",color:"#5C7A5A"}},"🛒 Lista della Spesa"),
-        React.createElement("p",{style:{margin:0,color:"#9e8c7a",fontSize:13}},"Cosa manca per il menù del mese")
+        React.createElement("p",{style:{margin:0,color:"#9e8c7a",fontSize:13}},"Settimane con menù proprio usano quello, le altre il menù base")
       ),
       React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center"}},
         React.createElement("button",{onClick:()=>changeMonth(-1),style:{...sBtn,fontSize:18,padding:"4px 10px"}},"‹"),
@@ -497,15 +559,22 @@ function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
         React.createElement("button",{onClick:()=>changeMonth(+1),style:{...sBtn,fontSize:18,padding:"4px 10px"}},"›")
       )
     ),
+
+    // Mancanti del tutto
     React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,marginBottom:14,border:"1.5px solid #ede8e0"}},
       React.createElement("h3",{style:{margin:"0 0 12px",color:"#c62828",fontSize:15}},"❌ Da acquistare ("+missing.length+")"),
       missing.length===0?
-        React.createElement("p",{style:{color:"#9e8c7a",margin:0}},"🎉 Hai tutto in dispensa!"):
-        missing.map(dish=>React.createElement("div",{key:dish,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ebe3"}},
-          React.createElement("input",{type:"checkbox",checked:!!checked[dish],onChange:()=>toggle(dish),style:{width:18,height:18,accentColor:"#5C7A5A",cursor:"pointer",flexShrink:0}}),
-          React.createElement("span",{style:{flex:1,textDecoration:checked[dish]?"line-through":"none",color:checked[dish]?"#9e8c7a":"inherit",fontSize:14}},dish)
-        ))
+        React.createElement("p",{style:{color:"#9e8c7a",margin:0}},"🎉 Nessun prodotto completamente mancante!"):
+        missing.map(d=>React.createElement(DishRow,{key:d.name,d,accentColor:"#c62828"}))
     ),
+
+    // Insufficienti
+    insufficient.length>0&&React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,marginBottom:14,border:"1.5px solid #ede8e0"}},
+      React.createElement("h3",{style:{margin:"0 0 12px",color:"#f57f17",fontSize:15}},"⚠️ Insufficienti ("+insufficient.length+")"),
+      insufficient.map(d=>React.createElement(DishRow,{key:d.name,d,accentColor:"#f57f17"}))
+    ),
+
+    // Extra
     React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,marginBottom:14,border:"1.5px solid #ede8e0"}},
       React.createElement("h3",{style:{margin:"0 0 12px",color:"#D47A3E",fontSize:15}},"➕ Extra / Detersivi"),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}},
@@ -516,7 +585,7 @@ function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
         ),
         React.createElement("button",{onClick:addExtra,style:btn("#D47A3E")},"+ Aggiungi")
       ),
-      extraItems.map(item=>React.createElement("div",{key:item.id,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ebe3"}},
+      extraItems.map(item=>React.createElement("div",{key:item.id,style:rowStyle},
         React.createElement("input",{type:"checkbox",checked:!!checked["x-"+item.id],onChange:()=>toggle("x-"+item.id),style:{width:18,height:18,accentColor:"#D47A3E",cursor:"pointer",flexShrink:0}}),
         React.createElement("span",{style:{flex:1,textDecoration:checked["x-"+item.id]?"line-through":"none",color:checked["x-"+item.id]?"#9e8c7a":"inherit",fontSize:14}},
           item.name+" — "+item.quantity+" "+item.unit
@@ -524,14 +593,17 @@ function ShoppingTab({inventory,weeklyMenus,baseMenu}) {
         React.createElement("button",{onClick:()=>setExtraItems(e=>e.filter(i=>i.id!==item.id)),style:{...sBtn,background:"#ffebee",color:"#c62828",padding:"3px 8px"}},"✕")
       ))
     ),
+
+    // Già ok
     React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:16,border:"1.5px solid #ede8e0"}},
-      React.createElement("h3",{style:{margin:"0 0 12px",color:"#2e7d32",fontSize:15}},"✅ Già in dispensa ("+avail.length+")"),
-      avail.map(dish=>{
-        const match=inventory.find(i=>i.name.toLowerCase()===dish.toLowerCase());
-        return React.createElement("div",{key:dish,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ebe3"}},
+      React.createElement("h3",{style:{margin:"0 0 12px",color:"#2e7d32",fontSize:15}},"✅ Già sufficienti ("+ok.length+")"),
+      ok.length===0?React.createElement("p",{style:{color:"#9e8c7a",margin:0}},"—"):
+      ok.map(d=>{
+        const match=inventory.find(i=>i.name.toLowerCase()===d.name.toLowerCase());
+        return React.createElement("div",{key:d.name,style:rowStyle},
           React.createElement("span",{style:{color:"#2e7d32",flexShrink:0}},"✓"),
-          React.createElement("span",{style:{flex:1,fontSize:14}},dish),
-          match&&React.createElement("span",{style:{color:"#9e8c7a",fontSize:12}},match.quantity+" "+match.unit)
+          React.createElement("span",{style:{flex:1,fontSize:14}},d.name),
+          React.createElement("span",{style:{fontSize:12,color:"#9e8c7a"}},"×"+d.needed+" · hai "+d.inStock+" "+(match?match.unit:"pz"))
         );
       })
     )
